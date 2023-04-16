@@ -10,7 +10,7 @@ make_latent_dirichlet_alloc <- function() {
 	modelenv::set_model_engine("latent_dirichlet_alloc", "partition", "topicmodels")
 	modelenv::set_dependency(
 		model = "latent_dirichlet_alloc",
-		model = "partition",
+		mode = "partition",
 		eng = "topicmodels",
 		pkg = "topicmodels"
 	)

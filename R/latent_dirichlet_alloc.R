@@ -26,8 +26,8 @@ latent_dirichlet_alloc <-
   function(mode = "partition",
            engine = "topicmodels",
            num_topics = NULL,
-           topic_density = NULL,
-           word_density = NULL) {
+           topic_density = 0.4,
+           word_density = 0.01) {
     args <- list(
       num_topics = enquo(num_topics),
       topic_density = enquo(topic_density),
@@ -135,7 +135,7 @@ check_args.latent_dirichlet_alloc <- function(object) {
 }
 
 # ------------------------------------------------------------------------------
-   
+
 #' Simple Wrapper around ...
 #' Bodwin wrote this part
 #' Altering output w/ column names
