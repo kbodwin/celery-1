@@ -1,176 +1,160 @@
-#' Latent Dirichlet Allocation (LDA)
+library(topicmodels)
+library(tibble)
+library(magrittr)
+library(methods)
+library(tm)
+
+#' latent_dirichlet_alloc class
 #'
-#' @description
+#' A wrapper class for the topicmodels LDA object.
 #'
-#' `latent_dirichlet_alloc()` defines a model that fits topics to a corpus using Latent Dirichlet
-#' Allocation.
-#'
-#' @param mode A single character string for the type of model. The only
-#'   possible value for this model is "partition".
-#' @param engine A single character string specifying what computational engine
-#'   to use for fitting. Possible engines are listed below. The default for this
-#'   model is `"topicmodels"`.
-#' @param num_topics The number of topics to fit.
-#' @param topic_density Prior on document-topic distribution.
-#' @param word_density Prior on topic-word distribution.
-#''
-#' @return An `lda` topic model specification.
-#'
-#' @examples
-#' # Show all engines
-#' modelenv::get_from_env("lda")
-#'
-#' latent_dirichlet_alloc()
+#' @keywords internal
 #' @export
-latent_dirichlet_alloc <-
-  function(mode = "partition",
-           engine = "topicmodels",
-           num_topics = NULL,
-           topic_density = 0.4,
-           word_density = 0.01) {
-    args <- list(
-      num_topics = enquo(num_topics),
-      topic_density = enquo(topic_density),
-      word_density = enquo(word_density)
-    )
+setClass("latent_dirichlet_alloc",
+         slots = list(
+           control = "list",
+           num_topics = "numeric",
+           model = "LDA"
+         ))
 
-    new_cluster_spec(
-      "latent_dirichlet_alloc",
-      args = args,
-      eng_args = NULL,
-      mode = mode,
-      method = NULL,
-      engine = engine
-    )
-  }
-
+#' Constructor for latent_dirichlet_alloc class
+#'
+#' @param num_topics A numeric value specifying the number of topics.
+#' @param control A list specifying the control parameters for LDA.
+#' @return An instance of latent_dirichlet_alloc class.
 #' @export
-print.latent_dirichlet_alloc <- function(x, ...) {
-  cat("LDA Topic Model Specification (", x$mode, ")\n\n", sep = "")
-  model_printer(x, ...)
-
-  if (!is.null(x$method$fit$args)) {
-    cat("Model fit template:\n")
-    print(show_call(x))
-  }
-
-  invisible(x)
+latent_dirichlet_alloc <- function(num_topics, control = list(alpha = 0.5, burnin = 1000, iter=1000, keep = 50, seed = 44)) {
+  obj <- new("latent_dirichlet_alloc")
+  obj@num_topics <- num_topics
+  obj@control <- control
+  return(obj)
 }
 
+#' Fitting function for latent_dirichlet_alloc class
+#' 
+#' @param object An instance of the latent_dirichlet_alloc class.
+#' @param data Data for fitting the LDA model.
+#' @return An instance of a fitted latent_dirichlet_alloc class.
 #' @export
-translate_tidyclust.latent_dirichlet_alloc <- function(x, engine = x$engine, ...) {
-  x <- translate_tidyclust.default(x, engine, ...)
-  x
+fit.latent_dirichlet_alloc <- function(object, data) {
+  object@model <- LDA(data, method = "Gibbs", control = object@control, k = object@num_topics)
+  return(object)
 }
 
-# ------------------------------------------------------------------------------
-
-#' @method update lda
-#' @rdname tidyclust_update
+#' Summary function for latent_dirichlet_alloc class
+#' 
+#' @param object A fitted instance of the latent_dirichlet_alloc class.
+#' @param num_terms Number of terms to show per topic
+#' @return Summary information about the LDA model.
 #' @export
-update.latent_dirichlet_alloc <- function(object,
-                       parameters = NULL,
-                       num_topics = NULL,
-                       topic_density = NULL,
-                       word_density = NULL, ...) {
-  eng_args <- parsnip::update_engine_parameters(
-    object$eng_args, fresh = fresh, ...
+extract_fit_summary.latent_dirichlet_alloc <- function(object, num_terms = 5) {
+  
+  gamma <- object@model@gamma
+  gamma_probabilities <- tibble(id = 1:nrow(gamma))
+  for (i in 1:ncol(gamma)) {
+    col_name <- paste0("Topic ", i)
+    gamma_probabilities[[col_name]] <- gamma[,i]
+  }
+  
+  tt <- terms(object@model, num_terms)
+  topic_terms <- tibble(id = 1:nrow(tt))
+  for (i in 1:ncol(tt)) {
+    col_name <- paste0("Topic ", i)
+    topic_terms[[col_name]] <- tt[,i]
+  }
+  
+  summary <- list(
+    gamma_probabilities = gamma_probabilities,
+    topic_terms = tt
   )
-
-  if (!is.null(parameters)) {
-    parameters <- parsnip::check_final_param(parameters)
-  }
-  args <- list(
-    num_topics = enquo(num_topics),
-    topic_density = enquo(topic_density),
-    word_density = enquo(word_density)
-  )
-
-  args <- parsnip::update_main_parameters(args, parameters)
-
-  if (fresh) {
-    object$args <- args
-    object$eng_args <- eng_args
-  } else {
-    null_args <- map_lgl(args, null_value)
-    if (any(null_args)) {
-      args <- args[!null_args]
-    }
-    if (length(args) > 0) {
-      object$args[names(args)] <- args
-    }
-    if (length(eng_args) > 0) {
-      object$eng_args[names(eng_args)] <- eng_args
-    }
-  }
-
-  new_cluster_spec(
-    "latent_dirichlet_alloc",
-    args = object$args,
-    eng_args = object$eng_args,
-    mode = object$mode,
-    method = NULL,
-    engine = object$engine
-  )
+  
+  return(summary)
 }
 
-# ------------------------------------------------------------------------------
-
-check_args.latent_dirichlet_alloc <- function(object) {
-  args <- lapply(object$args, rlang::eval_tidy)
-
-  if (all(is.numeric(args$num_topics)) && any(args$num_topics < 0)) {
-    rlang::abort("The number of topics should be >= 0.")
-  }
-
-  if (all(is.numeric(args$word_density)) && any(args$word_density <= 0)) {
-    rlang::abort("The word density prior must be >0")
-  }
-
-  if (all(is.numeric(args$topic_density)) && any(args$topic_density <= 0)) {
-    rlang::abort("The topic density prior must be >0")
-  }
-
-  invisible(object)
+#' Predict method for latent_dirichlet_alloc objects
+#'
+#' Performs prediction based on the type.
+#'
+#' @param object An object of class latent_dirichlet_alloc
+#' @param type Changes representation of results.
+#' @param newdata Data to be clustered into topics.
+#' @return The predicted result.
+#' @export
+predict.latent_dirichlet_alloc <- function(object, type, newdata, ...) {
+  results <- posterior(object@model, newdata)
+  if (type == "cluster") { return(predict_cluster(results)) }
+  else if (type == "prob") { return(predict_prob(results)) }
+  else if (type == "raw") { return(predict_raw(results)) }
+  else { return("Invalid 'type' argument") }
 }
 
-# ------------------------------------------------------------------------------
+#' Helper function
+predict_cluster <- function(results) {
+  clusters <- tibble(id = numeric(), cluster = numeric())
+  for (i in 1:nrow(results$topics)) {
+    clusters <- rbind(clusters, tibble(id = i, cluster = which.max(results$topics[i,])))
+    print(i)
+  }
+  return(clusters)
+}
 
-#' Simple Wrapper around ...
-#' Bodwin wrote this part
-#' Altering output w/ column names
-#' leave blank for now (raw function)
+#' Helper function
+predict_prob <- function(results) {
+  probabilities <- tibble(id = 1:nrow(results$topics))
+  for (i in 1:ncol(results$topics)) {
+    col_name <- paste0("prob_", i)
+    probabilities[[col_name]] <- results$topics[,i]
+  }
+  return(probabilities)
+}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+#' Helper function
+predict_raw <- function(results) {
+  return("raw")
+}
 
 
+#------------------------------------------------------------------------
+#------------------------------------------------------------------------
+#------------------------------------------------------------------------
 
+# Testing
+# data("AssociatedPress", package = "topicmodels")
+# 
+# lda_spec <- latent_dirichlet_alloc(num_topics=3, control=list(alpha = .5, seed=44))
+# 
+# lda_fit <- lda_spec %>%
+#   fit(data = AssociatedPress[1:20, ])
+# 
+# res <- predict(lda_fit, type="cluster", newdata=AssociatedPress[21:30,])
+# print(res)
+# 
+# res <- predict(lda_fit, type="prob", newdata=AssociatedPress[21:30,])
+# print(res)
+# 
+# res <- predict(lda_fit, type="raw", newdata=AssociatedPress[21:30,])
+# print(res)
+# 
+# lda_fit %>%
+#   summary()
+# 
+# fit_summary <- lda_fit %>%
+#   extract_fit_summary()
+# print(fit_summary)
 
+#' Functions todo:
+#' summary()
+#' extract_fit_summary()
+#'
+#' Within summary object -> $orig_labels and $cluster_assignments\
+#' 
+#' topics()
+#' terms()
+#' 
 
-
-
-
-
-
-
-
+#' Other todo
+#' Show workflows
+#' Change other paramters like alpha, beta...
+#' A brief intro to latent dirichlet allocation
 
 
