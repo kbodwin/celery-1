@@ -1,0 +1,184 @@
+---
+title: "latent-dirichlet-alloc"
+#output: rmarkdown::html_vignette
+# vignette: >
+#   %\VignetteIndexEntry{latent-dirichlet-alloc}
+#   %\VignetteEngine{knitr::rmarkdown}
+#   %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+## Setup
+
+```{r}
+library(workflows)
+library(parsnip)
+```
+
+Load libraries:
+
+```{r setup}
+library(topicmodels)
+library(tidyclust)
+library(tibble)
+library(magrittr)
+source("latent_dirichlet_alloc.R")
+```
+
+```{r setup_secret, echo = FALSE}
+set.seed(838383)
+```
+
+Load and clean a dataset:
+
+```{r}
+# Make sure to clean your data into a DocumentTermMatrix
+data("AssociatedPress", package = "topicmodels")
+```
+
+At the end of this vignette, you will find a brief overview of the latent dirichlet allocation
+algorithm, as well as some further algorithmic variant details, for those who
+would like a reference.
+
+## Latent Dirichlet Allocation (LDA) specification in {tidyclust}
+
+To specify an LDA model in `tidyclust`, simply choose a value of `num_topics`:
+
+```{r}
+lda_spec <- latent_dirichlet_alloc(num_topics = 3)
+
+lda_spec
+```
+
+There is currently one engine: `topicmodels::LDA` (default)
+
+It is also possible to change the algorithmic details of the implementation, by
+providing a control list. The sampling method is set to "Gibbs". More defaults:
+
+```{r}
+lda_spec <- latent_dirichlet_alloc(num_topics = 3, control = list(alpha = 0.5, burnin = 1000, iter=1000, keep = 50, seed = 44))
+
+# num_clusters  - default: MUST BE PROVIDED BY USER
+# control       - default: list(alpha = .5, seed=44)
+
+```
+
+## Fitting LDA models
+
+Once specified, a model may be "fit" to a dataset by providing a formula and 
+data frame in the same manner as a `tidymodels` model fit.  
+Note that unlike in supervised modeling, the formula should not include a 
+response variable.   
+
+The data set is an object of class "DocumentTermMatrix" provided by package `tm`.
+You may used ldaformat2dtm() to format your data.   
+    
+Usage: ldaformat2dtm(documents, vocab, omit_empty = TRUE)
+
+```{r}
+lda_fit <- lda_spec %>%
+  fit(data = AssociatedPress[1:20, ])
+
+lda_fit %>%
+  summary()
+```
+
+`tidyclust` also provides a function, `extract_fit_summary()`, to produce a
+list of model summary information in a format that
+is consistent across all cluster model specifications and engines. The inner 
+workings of the following function is as follows:
+
+Input:
+
+The function takes an object parameter, which represents a fitted latent_dirichlet_alloc object from the tidyclust package.
+It also has an optional parameter num_terms, which specifies the number of top terms to include in the summary for each topic. By default, it is set to 5.
+
+1. Extracting Gamma Probabilities:
+
+The function first retrieves the gamma matrix from the object, which contains the estimated topic proportions for each document in the dataset.
+
+It creates a new tibble called gamma_probabilities to store the gamma probabilities, with an id column representing the document index.
+For each column (topic) in the gamma matrix, the function creates a new column in gamma_probabilities with the column name as "Topic i" and populates it with the corresponding gamma probabilities.
+
+2. Extracting Terms-Topics:
+
+The function calls the terms() function on the object@model, which retrieves the top terms associated with each topic in the LDA model.
+It includes num_terms as an argument to specify the number of top terms to include in the summary.
+
+3. Creating the Summary:
+
+The function creates a summary list, which consists of two components:
+gamma_probabilities: It contains the tibble gamma_probabilities with the document-level topic proportions.
+terms_topics: It includes the top terms for each topic based on the num_terms parameter.
+
+```{r}
+lda_summary <- lda_fit %>%
+  extract_fit_summary(num_terms = 5)
+
+# $gamma_probabilities, $topic_terms
+lda_summary %>% str()
+```
+
+## A Brief Introduction to Latent Dirichlet Allocation (LDA)
+**Latent Dirichlet Allocation (LDA)** is a popular unsupervised learning algorithm used for topic modeling. It aims to discover latent topics within a collection of documents. LDA assumes that each document is a mixture of various topics, and each topic is characterized by a distribution of words.
+
+In **LDA**, the observed variables (words) are treated as indicators of the underlying, unobserved topic structure. The algorithm learns the topic distribution across documents and the word distribution within each topic. The main objective of **LDA** is to maximize the likelihood of generating the observed documents using these learned distributions.
+
+The steps involved in **LDA** are as follows:
+
+**Initialization**: Determine the number of topics (k/num_topics) to be discovered and initialize the topic distribution across documents and word distribution within topics.
+
+**Assignment**: Iterate over each word in each document and assign it to one of the topics based on the current topic distributions.
+
+**Update**: Update the topic distributions based on the assigned words in the previous step.
+
+Repeat steps 2 and 3 until the algorithm converges, i.e., the topic distributions and word assignments stabilize.
+
+The output of LDA includes the learned topic-word distributions and document-topic distributions, which provide insights into the prevalent topics and their representation in each document.
+
+It is worth noting that LDA assumes a generative probabilistic process for document creation and uses a Bayesian framework with a Dirichlet prior to model the topic distribution. The algorithm can be implemented using various libraries or packages in programming languages like Python and R.
+
+## Defintions
+**Alpha**: In Latent Dirichlet Allocation (LDA), alpha (α) is a hyperparameter that controls the document-topic density. It determines the concentration of topics in a document. A higher value of alpha means each document will contain a more diverse mixture of topics, while a lower value makes each document focus on a smaller set of topics.
+
+**Beta**: Beta (β) is another hyperparameter in LDA that controls the topic-word density. It determines the concentration of words in a topic. A higher value of beta means each topic will contain a more diverse mixture of words, while a lower value makes each topic focus on a narrower set of words.
+
+**Gamma**: In some variations of LDA, such as Hierarchical LDA (HDP-LDA), gamma (γ) is a hyperparameter that controls the topic distribution across documents. It determines the concentration of topics across the entire corpus. A higher value of gamma means the corpus will have a more diverse mixture of topics, while a lower value makes the corpus focus on a smaller set of topics.
+
+**Term distribution**: The term distribution refers to the probability distribution of words within a particular topic. It represents the likelihood of observing each word in the vocabulary given a specific topic. The term distribution helps identify the most relevant words associated with a topic.
+
+**Topic distribution**: The topic distribution refers to the probability distribution of topics within a document. It represents the prevalence of different topics in a document. The topic distribution provides insights into which topics are significant in a particular document.
+
+**Document-term matrix**: A document-term matrix (DTM) is a matrix representation of a collection of documents, where rows represent documents and columns represent terms (words). Each cell in the matrix contains the frequency or weight of a specific term in a particular document. The DTM is a common input for topic modeling algorithms like LDA, where it captures the term frequencies or weights for analysis.
+
+**Gibbs sampling method**:     
+*1. Initialization:*
+
+For each document in the dataset, assign a topic to each word randomly. This initialization step assigns each word in each document to a random topic.
+
+*2. Iterative Sampling:*
+
+For each word in each document, calculate the probability of assigning it to each topic, conditioned on the current assignments of all other words in the corpus.
+The probability is calculated based on the word's current topic assignment, the current topic-word distribution, and the current document-topic distribution.
+To compute this probability, we consider the topic assignment of the word, and temporarily remove it from the counts of topics and words in the document. Then, we calculate the conditional probability of assigning the word to each topic based on the current distributions.
+Sample a new topic assignment for the word based on the calculated probabilities.
+Update the counts of topics and words in the document accordingly.
+
+*3. Repeat Step 2 for a fixed number of iterations or until convergence:*
+
+The Gibbs sampling method iterates over the entire dataset multiple times, allowing each word to be re-assigned to different topics based on the current state of the model.
+The process of iteratively sampling new topic assignments for all words in all documents helps to explore the space of possible topic assignments and approximate the true posterior distribution.
+
+*4. Output:*
+
+After a sufficient number of iterations, the Gibbs sampling method converges to a stable state.
+The final topic assignments of the words represent a sample from the posterior distribution of the latent variables (topics) given the observed data (documents).
+These samples can be used to estimate various quantities of interest, such as the topic-word distribution, document-topic distribution, and the most probable topics for a given document.
